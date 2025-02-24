@@ -1,0 +1,12 @@
+[package]
+name = "ay_runtime"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+libc = "0.2.169"
+lazy_static = "1.5.0"
+fxhash = "0.2.1"
+
+socket2 = "0.5.8"
+# tokio = { version = "1.43.0", features = ["full"] }
