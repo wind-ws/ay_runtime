@@ -1,14 +1,10 @@
 use std::{
-    collections::HashMap,
-    os::fd::RawFd,
-    sync::Arc,
-    task::{ContextBuilder, Waker},
-    thread,
+    collections::HashMap, io::Write, os::fd::RawFd, sync::Arc, task::{ContextBuilder, Waker}, thread
 };
 
 use super::{
     reactor::{Reactor, Register},
-    task::{get_id, Task, ID},
+    task::{get_id, Task, TaskWaker, ID},
 };
 use crate::utils::{
     epoll::{self, EpollEvent},
@@ -70,53 +66,62 @@ impl Woker {
         pipe: Arc<Pipe<Task>>,
         reg_pipe: Arc<Pipe<Register>>,
     ) -> Self {
-        let thread =
-            thread::Builder::new().name(format!("work_thread[{}]", id));
-        let thread = thread.spawn(move || {
-            let task_pipe_reader = pipe;
-            let mut map = HashMap::<ID, Task>::new();
-            let id_pipe: Arc<Pipe<ID>> = Arc::new(pipe::Pipe::<ID>::new());
-            let reg_pipe = reg_pipe;
-            loop {
-                let tasks = task_pipe_reader.read_limited(5);
-                tasks.into_iter().for_each(|mut task| {
-                    let waker =
-                        Waker::from(Arc::new(task.waker(id_pipe.clone())));
-                    let mut ed = ExtData {
-                        id: task.id,
-                        pipe_write: reg_pipe.clone(),
-                    };
-                    let mut cx =
-                        ContextBuilder::from_waker(&waker).ext(&mut ed).build();
-                    match task.future.as_mut().poll(&mut cx) {
-                        std::task::Poll::Ready(v) => {}
-                        std::task::Poll::Pending => {
-                            map.insert(task.id, task);
+        let thread = thread::Builder::new()
+            // .stack_size(1024 * 1024 * 20)
+            .name(format!("work_thread[{}]", id));
+        let thread = thread
+            .spawn(move || {
+                let task_pipe_reader = pipe;
+                let mut map = HashMap::<ID, Task>::new();
+                let id_pipe: Arc<Pipe<ID>> = Arc::new(pipe::Pipe::<ID>::new());
+                let reg_pipe = reg_pipe;
+                loop {
+                    let tasks = task_pipe_reader.read_limited(5);
+                    tasks.into_iter().for_each(|mut task| {
+                        let waker =
+                            Waker::from(Arc::new(task.waker(id_pipe.clone())));
+                        let mut ed = ExtData {
+                            id: task.id,
+                            pipe_write: reg_pipe.clone(),
+                        };
+                        let mut cx = ContextBuilder::from_waker(&waker)
+                            .ext(&mut ed)
+                            .build();
+                        match task.future.as_mut().poll(&mut cx) {
+                            std::task::Poll::Ready(v) => {}
+                            std::task::Poll::Pending => {
+                                map.insert(task.id, task);
+                            }
+                        }
+                    });
+                    let ids = id_pipe.read_all();
+                    for id in ids.into_iter() {
+                        let task = map.get_mut(&id).unwrap();
+                        let b = task.waker(id_pipe.clone());
+                        Arc::new(Arc::new(pipe::Pipe::<ID>::new()));
+                        0;
+                        let c = Arc::new(b);
+                        let waker: Waker = Waker::from(c);
+                        let mut ed = ExtData {
+                            id: task.id,
+                            pipe_write: reg_pipe.clone(),
+                        };
+                        let mut cx = ContextBuilder::from_waker(&waker)
+                            .ext(&mut ed)
+                            .build();
+                        match task.future.as_mut().poll(&mut cx) {
+                            std::task::Poll::Ready(v) => {
+                                map.remove(&id);
+                            }
+                            std::task::Poll::Pending => {}
                         }
                     }
-                });
-                let ids = id_pipe.read_all();
-                ids.into_iter().for_each(|id| {
-                    let task = map.get_mut(&id).unwrap();
-                    let b = task.waker(id_pipe.clone());
-                    let c = Arc::new(b);
-                    let waker: Waker =
-                        Waker::from(c);
-                    let mut ed = ExtData {
-                        id: task.id,
-                        pipe_write: reg_pipe.clone(),
-                    };
-                    let mut cx =
-                        ContextBuilder::from_waker(&waker).ext(&mut ed).build();
-                    match task.future.as_mut().poll(&mut cx) {
-                        std::task::Poll::Ready(v) => {
-                            map.remove(&id);
-                        }
-                        std::task::Poll::Pending => {}
-                    }
-                });
-            }
-        }).unwrap();
+                    // ids.into_iter().for_each(|id| {
+                        
+                    // });
+                }
+            })
+            .unwrap();
         Self { id, thread }
     }
 }

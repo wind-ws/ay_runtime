@@ -30,6 +30,7 @@ impl Wake for TaskWaker {
         self.pipe_write.write(&self.id);
     }
 }
+unsafe impl Send for TaskWaker {}
 
 pub fn get_id() -> ID {
     static ID: AtomicU64 = AtomicU64::new(1);

@@ -29,5 +29,19 @@ signal SIGABRT
 malloc(): unaligned tcache chunk detected
 
 奇怪的时,每次发生错误的地点还不同,有时还不会发生错误
+几乎都发生在 `let c = Arc::new(b);` 这个代码中的Box::new中
+但可能实际错误不是发生在这里,只是这里触发了abrot
 
-初步判断,问题出现在pipe中
+只有调用 Socket连接才会出现
+
+
+调用
+Arc::new(TaskWaker {
+    id: task.id,
+    pipe_write:Arc::new(pipe::Pipe::<ID>::new()),
+});
+会发生abrot,
+但
+Arc::new(Arc::new(pipe::Pipe::<ID>::new()));
+却不会
+

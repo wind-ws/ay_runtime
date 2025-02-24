@@ -140,7 +140,6 @@ impl Future for Sleep {
             if self.b_thread {
                 self.b_thread = false;
                 let waker = cx.waker().clone();
-                let ext = cx.ext().downcast_mut::<ExtData>().unwrap();
                 let duration = self.duration;
                 let completed = self.completed.clone();
                 thread::spawn(move || {
@@ -149,6 +148,67 @@ impl Future for Sleep {
                     waker.wake();
                 });
             }
+            Poll::Pending
+        }
+    }
+}
+
+pub struct SleepFd {
+    fd: i32,
+    ms:u64,
+    b: bool,
+}
+impl SleepFd {
+    pub fn new(ms:u64) -> Self {
+        Self {
+            fd: unsafe {
+                libc::timerfd_create(
+                    libc::CLOCK_MONOTONIC,
+                    libc::TFD_NONBLOCK ,
+                )
+            },
+            ms,
+            b: false,
+        }
+    }
+}
+impl Future for SleepFd {
+    type Output = ();
+
+    fn poll(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Self::Output> {
+        if self.b {
+            Poll::Ready(())
+        } else {
+            self.b = true;
+            let mut timer_spec = libc::itimerspec {
+                it_interval: libc::timespec {
+                    tv_sec: 0,
+                    tv_nsec: 0,
+                }, // 无间隔
+                it_value: libc::timespec {
+                    tv_sec: 0,
+                    tv_nsec: 1000_000 * self.ms as i64,
+                }, // 5 秒
+            };
+            let result = unsafe {
+                libc::timerfd_settime(
+                    self.fd,
+                    0,
+                    &timer_spec,
+                    std::ptr::null_mut(),
+                )
+            };
+            let waker = cx.waker().clone();
+            let ext = cx.ext().downcast_mut::<ExtData>().unwrap();
+            ext.pipe_write.write(&Register {
+                id: ext.id,
+                interest_fd: self.fd,
+                events: (libc::EPOLLIN) as u32,
+                waker,
+            });
             Poll::Pending
         }
     }
@@ -173,7 +233,9 @@ mod tests {
             executor::{Executor, ExtData},
             reactor::Register,
             task::{get_id, Task},
-        }, tcp::Sleep, utils::NOW
+        },
+        tcp::{Sleep, SleepFd},
+        utils::NOW,
     };
 
     pub struct AsyncTcpStream {
@@ -226,7 +288,7 @@ mod tests {
                     ext.pipe_write.write(&Register {
                         id: ext.id,
                         interest_fd: self.socket.as_raw_fd(),
-                        events: (libc::EPOLLOUT) as u32,
+                        events: libc::EPOLLONESHOT as u32,
                         waker,
                     });
                     Poll::Pending
@@ -241,7 +303,11 @@ mod tests {
         let executor = Executor::new(10);
         let future = async {
             println!("start:{}", NOW.elapsed().as_millis());
-            // Sleep::new(Duration::from_millis(100)).await;
+            // Sleep::new(Duration::from_millis(1)).await;
+            // for _ in 0..1000 {
+            //     SleepFd::new(1).await;
+            // }
+
             let stream =
                 AsyncTcpStream::connect("127.0.0.1:3000").await.unwrap();
             println!("done:{}", NOW.elapsed().as_millis());
@@ -253,6 +319,6 @@ mod tests {
 
         executor.add_task(&task);
 
-        thread::sleep(Duration::from_millis(100001));
+        thread::sleep(Duration::from_millis(100011));
     }
 }
