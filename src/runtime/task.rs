@@ -1,7 +1,5 @@
 use std::{
-    pin::Pin,
-    sync::{Arc, atomic::AtomicU64},
-    task::Wake,
+    pin::Pin, ptr::NonNull, sync::{atomic::AtomicU64, Arc}, task::Wake
 };
 
 use crate::utils::pipe::Pipe;
@@ -11,9 +9,16 @@ pub type ID = u64;
 
 pub struct Task<O = ()> {
     pub id: ID,
-    pub future: MyFuture<O>,
+    pub future:NonNull<(dyn Future<Output = O> + Send)>,
 }
 impl Task {
+    pub fn new(id: ID, future: Box<dyn Future<Output = ()> + Send>) -> Self {
+        let ptr = Box::into_raw(future);
+        Self {
+            id,
+            future: NonNull::new(ptr).unwrap(),
+        }
+    }
     pub fn waker(&self, pipe_write: Arc<Pipe<ID>>) -> TaskWaker {
         TaskWaker {
             id: self.id,

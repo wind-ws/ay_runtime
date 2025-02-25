@@ -1,15 +1,33 @@
 use std::{
-    collections::HashMap, io::Write, os::fd::RawFd, sync::Arc, task::{ContextBuilder, Waker}, thread
+    alloc::{Layout, dealloc},
+    collections::HashMap,
+    io::Write,
+    os::fd::RawFd,
+    pin::{Pin, pin},
+    ptr,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU64, AtomicUsize},
+    },
+    task::{Context, ContextBuilder, Waker},
+    thread,
 };
+
+use lazy_static::lazy_static;
 
 use super::{
     reactor::{Reactor, Register},
-    task::{get_id, Task, TaskWaker, ID},
+    task::{ID, Task, TaskWaker, get_id},
 };
 use crate::utils::{
+    NOW,
     epoll::{self, EpollEvent},
     pipe::{self, Pipe},
 };
+
+static mut TASK_PIPE: Option<Arc<Pipe<Task>>> = None;
+/// 总任务添加数量
+static TASK_COUNT: AtomicU64 = AtomicU64::new(0);
 
 pub struct Executor {
     thread_pool: ThreadPool,
@@ -32,22 +50,59 @@ impl Executor {
             );
             pool.wokers.push(woker);
         }
+        unsafe {
+            TASK_PIPE = Some(pool.pipe.clone());
+        }
         Self {
             thread_pool: pool,
             reactor,
         }
     }
     pub fn add_task(&self, task: &Task) {
+        unsafe {
+            TASK_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        };
         self.thread_pool.pipe.write(task);
     }
-    // pub fn add_future(&self,future:){
-    //     let id = get_id();
-    // }
-    pub fn spawn() {}
-    pub fn block_on<F>(future: F)
+
+    /// #plan : 获取返回值
+    pub fn spawn<F>(future: F)
     where
-        F: Future,
+        F: Future<Output = ()> + Send + 'static,
+        F::Output: Send + 'static,
     {
+        let id = get_id();
+        let task = Task::new(id, Box::new(future));
+        unsafe {
+            TASK_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        };
+        #[allow(static_mut_refs)]
+        unsafe {
+            TASK_PIPE.as_ref().unwrap().write(&task)
+        };
+    }
+
+    pub fn block_on<F: Future>(&self, future: F) -> F::Output {
+        todo!()
+    }
+    pub fn block(&self) {
+        'a: loop {
+            let count = unsafe {
+                TASK_COUNT.load(std::sync::atomic::Ordering::Relaxed)
+            };
+            for work in &self.thread_pool.wokers {
+                if !work.idle.load(std::sync::atomic::Ordering::Relaxed) {
+                    continue 'a;
+                }
+            }
+            if count
+                == unsafe {
+                    TASK_COUNT.load(std::sync::atomic::Ordering::Relaxed)
+                }
+            {
+                break;
+            }
+        }
     }
 }
 
@@ -59,6 +114,8 @@ pub struct ThreadPool {
 pub struct Woker {
     id: ID,
     thread: thread::JoinHandle<()>,
+    /// true: 空闲
+    pub idle: Arc<AtomicBool>,
 }
 impl Woker {
     pub fn new(
@@ -66,15 +123,21 @@ impl Woker {
         pipe: Arc<Pipe<Task>>,
         reg_pipe: Arc<Pipe<Register>>,
     ) -> Self {
+        let idle = Arc::new(AtomicBool::new(false));
+        let idle_ = idle.clone();
         let thread = thread::Builder::new()
             // .stack_size(1024 * 1024 * 20)
             .name(format!("work_thread[{}]", id));
         let thread = thread
             .spawn(move || {
                 let task_pipe_reader = pipe;
-                let mut map = HashMap::<ID, Task>::new();
+                let mut map = HashMap::<ID, (Task, Waker)>::new();
                 let id_pipe: Arc<Pipe<ID>> = Arc::new(pipe::Pipe::<ID>::new());
                 let reg_pipe = reg_pipe;
+                let idle = idle_;
+                // 空闲多少ms,标记为空闲
+                const IDEL_MS: u128 = 500;
+                let mut time_anchor = 0u128;
                 loop {
                     let tasks = task_pipe_reader.read_limited(5);
                     tasks.into_iter().for_each(|mut task| {
@@ -87,21 +150,29 @@ impl Woker {
                         let mut cx = ContextBuilder::from_waker(&waker)
                             .ext(&mut ed)
                             .build();
-                        match task.future.as_mut().poll(&mut cx) {
-                            std::task::Poll::Ready(v) => {}
+                        let a = unsafe { task.future.as_mut() };
+                        let f = Pin::static_mut(a);
+                        // println!(" {}",task.id);
+                        match f.poll(&mut cx) {
+                            std::task::Poll::Ready(v) => {
+                                println!("r {}",task.id);
+                                
+                                // 释放 future
+                                unsafe {
+                                    drop(Box::from_raw(task.future.as_ptr()))
+                                }
+                            }
                             std::task::Poll::Pending => {
-                                map.insert(task.id, task);
+                                println!("p {}",task.id);
+
+                                map.insert(task.id, (task, waker));
                             }
                         }
                     });
                     let ids = id_pipe.read_all();
                     for id in ids.into_iter() {
-                        let task = map.get_mut(&id).unwrap();
-                        let b = task.waker(id_pipe.clone());
-                        Arc::new(Arc::new(pipe::Pipe::<ID>::new()));
-                        0;
-                        let c = Arc::new(b);
-                        let waker: Waker = Waker::from(c);
+                        let (task, waker) = map.get_mut(&id).unwrap();
+                        let waker: Waker = waker.clone();
                         let mut ed = ExtData {
                             id: task.id,
                             pipe_write: reg_pipe.clone(),
@@ -109,20 +180,44 @@ impl Woker {
                         let mut cx = ContextBuilder::from_waker(&waker)
                             .ext(&mut ed)
                             .build();
-                        match task.future.as_mut().poll(&mut cx) {
+
+                        let a = unsafe { task.future.as_mut() };
+                        let f = Pin::static_mut(a);
+
+                        match f.poll(&mut cx) {
                             std::task::Poll::Ready(v) => {
+                                println!("r {}|",id);
+                                // 释放future
+                                unsafe {
+                                    drop(Box::from_raw(task.future.as_ptr()))
+                                }
                                 map.remove(&id);
                             }
-                            std::task::Poll::Pending => {}
+                            std::task::Poll::Pending => {
+                                println!("p {}|",id);
+                            }
                         }
                     }
-                    // ids.into_iter().for_each(|id| {
-                        
-                    // });
+
+                    // true:空闲
+                    if map.len() == 0 {
+                        let now = NOW.elapsed().as_millis();
+                        if time_anchor == 0 {
+                            time_anchor = now;
+                        }
+                        if now - time_anchor >= IDEL_MS {
+                            idle.store(
+                                true,
+                                std::sync::atomic::Ordering::Relaxed,
+                            );
+                        }
+                    } else {
+                        time_anchor = 0;
+                    }
                 }
             })
             .unwrap();
-        Self { id, thread }
+        Self { id, thread, idle }
     }
 }
 

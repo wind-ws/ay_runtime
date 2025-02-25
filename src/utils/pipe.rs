@@ -13,13 +13,18 @@ pub(crate) fn pipe2() -> (RawFd, RawFd) {
     unsafe {
         libc::pipe2(fds.as_mut_ptr(), libc::O_NONBLOCK);
     }
+    let current_size = unsafe { libc::fcntl(fds[1], libc::F_GETPIPE_SZ) };
+    let new_size = 128 * 1024; // 128KB
+    if unsafe { libc::fcntl(fds[1], libc::F_SETPIPE_SZ, new_size) } == -1 {
+        panic!("")
+    }
     (fds[0], fds[1])
 }
 
 pub(crate) struct Pipe<T> {
     read_fd: RawFd,
     write_fd: RawFd,
-    _waker: PhantomData<T>,
+    _marker: PhantomData<T>,
 }
 unsafe impl<T> Send for Pipe<T> {}
 unsafe impl<T> Sync for Pipe<T> {}
@@ -30,13 +35,14 @@ impl<T> Pipe<T> {
         Self {
             read_fd,
             write_fd,
-            _waker: PhantomData::<T>,
+            _marker: PhantomData::<T>,
         }
     }
     pub fn write(&self, v: &T) {
         let len = std::mem::size_of::<T>();
         unsafe {
-            let n = libc::write(self.write_fd, v as *const T as *const c_void, len);
+            let n =
+                libc::write(self.write_fd, v as *const T as *const c_void, len);
             if n != len as isize {
                 panic!("Pipe::write write amount err {}", n)
             }
@@ -46,7 +52,8 @@ impl<T> Pipe<T> {
         let len = std::mem::size_of::<T>();
         let mut v: MaybeUninit<T> = MaybeUninit::uninit();
         unsafe {
-            let n = libc::read(self.read_fd, v.as_mut_ptr() as *mut c_void, len);
+            let n =
+                libc::read(self.read_fd, v.as_mut_ptr() as *mut c_void, len);
             if n == 0 || n == -1 {
                 None
             } else if n == len as isize {
@@ -74,7 +81,11 @@ impl<T> Pipe<T> {
         let len = std::mem::size_of::<T>();
         let mut vec = Vec::<T>::with_capacity(n);
         unsafe {
-            let mut n = libc::read(self.read_fd, vec.as_mut_ptr() as *mut c_void, len * n);
+            let mut n = libc::read(
+                self.read_fd,
+                vec.as_mut_ptr() as *mut c_void,
+                len * n,
+            );
             if n < 0 {
                 n = 0;
             }

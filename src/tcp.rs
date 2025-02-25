@@ -1,4 +1,5 @@
 use std::{
+    ffi::c_void,
     future::Pending,
     io::{self, Error},
     mem,
@@ -40,36 +41,48 @@ impl TcpStream {
         let new_flags = flags | libc::O_NONBLOCK;
         unsafe { libc::fcntl(sfd, libc::F_SETFL, new_flags) };
 
-        unsafe {
-            match socket_addr {
-                SocketAddr::V4(socket_addr_v4) => {
-                    let sockaddr = libc::sockaddr_in {
-                        sin_family: libc::AF_INET as u16,
-                        sin_port: socket_addr_v4.port().to_be(),
-                        sin_addr: libc::in_addr {
-                            s_addr: u32::from_be_bytes(
-                                socket_addr_v4.ip().octets(),
-                            )
-                            .to_be(),
-                        },
-                        sin_zero: [0; 8],
-                    };
-                    ConnectTcpStreamFuture {
-                        socket: sfd as RawFd,
-                        addr: sockaddr,
-                        len: std::mem::size_of::<libc::sockaddr_in>() as u32,
-                    }
-                    .await
-                    .unwrap();
+        match socket_addr {
+            SocketAddr::V4(socket_addr_v4) => {
+                let sockaddr = libc::sockaddr_in {
+                    sin_family: libc::AF_INET as u16,
+                    sin_port: socket_addr_v4.port().to_be(),
+                    sin_addr: libc::in_addr {
+                        s_addr: u32::from_be_bytes(
+                            socket_addr_v4.ip().octets(),
+                        )
+                        .to_be(),
+                    },
+                    sin_zero: [0; 8],
+                };
+                ConnectTcpStreamFuture {
+                    socket: sfd as RawFd,
+                    addr: sockaddr,
+                    len: std::mem::size_of::<libc::sockaddr_in>() as u32,
                 }
-                SocketAddr::V6(socket_addr_v6) => todo!(),
+                .await?;
             }
+            SocketAddr::V6(socket_addr_v6) => todo!(),
         };
-
         Ok(Self {
             socket_fd: sfd,
             // addr: sockaddr,
         })
+    }
+
+    pub async fn read(&self, buf: &mut [u8]) -> io::Result<()> {
+        ReadTcpStreamFuture {
+            socket: self.socket_fd,
+            buf,
+        }
+        .await
+    }
+
+    pub async fn write(&self, buf: &[u8]) -> io::Result<()> {
+        WriteTcpStreamFuture {
+            socket: self.socket_fd,
+            buf,
+        }
+        .await
     }
 }
 pub struct ConnectTcpStreamFuture {
@@ -91,7 +104,6 @@ impl Future for ConnectTcpStreamFuture {
                 Poll::Ready(Ok(()))
             } else {
                 let err = io::Error::last_os_error();
-                println!("{:?}", err);
                 if err.raw_os_error() == Some(libc::EINPROGRESS)
                     || err.kind() == io::ErrorKind::WouldBlock
                 {
@@ -107,6 +119,85 @@ impl Future for ConnectTcpStreamFuture {
                 } else {
                     Poll::Ready(Err(err))
                 }
+            }
+        }
+    }
+}
+
+pub struct ReadTcpStreamFuture<'a> {
+    socket: i32,
+    buf: &'a mut [u8],
+}
+impl Future for ReadTcpStreamFuture<'_> {
+    type Output = io::Result<()>;
+
+    fn poll(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Self::Output> {
+        unsafe {
+            let res = libc::read(
+                self.socket,
+                self.buf.as_mut_ptr() as *mut c_void,
+                self.buf.len(),
+            );
+            if res == -1 {
+                let err = io::Error::last_os_error();
+                if err.raw_os_error() == Some(libc::EINPROGRESS)
+                    || err.kind() == io::ErrorKind::WouldBlock
+                {
+                    let waker = cx.waker().clone();
+                    let ext = cx.ext().downcast_mut::<ExtData>().unwrap();
+                    ext.pipe_write.write(&Register {
+                        id: ext.id,
+                        interest_fd: self.socket,
+                        events: (libc::EPOLLIN) as u32,
+                        waker,
+                    });
+                    Poll::Pending
+                } else {
+                    Poll::Ready(Err(err))
+                }
+            } else {
+                Poll::Ready(Ok(()))
+            }
+        }
+    }
+}
+
+pub struct WriteTcpStreamFuture<'a> {
+    socket: i32,
+    buf: &'a [u8],
+}
+impl Future for WriteTcpStreamFuture<'_> {
+    type Output = io::Result<()>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        unsafe {
+            let res = libc::write(
+                self.socket,
+                self.buf.as_ptr() as *const c_void,
+                self.buf.len(),
+            );
+            if res == -1 {
+                let err = io::Error::last_os_error();
+                if err.raw_os_error() == Some(libc::EINPROGRESS)
+                    || err.kind() == io::ErrorKind::WouldBlock
+                {
+                    let waker = cx.waker().clone();
+                    let ext = cx.ext().downcast_mut::<ExtData>().unwrap();
+                    ext.pipe_write.write(&Register {
+                        id: ext.id,
+                        interest_fd: self.socket,
+                        events: (libc::EPOLLIN) as u32,
+                        waker,
+                    });
+                    Poll::Pending
+                } else {
+                    Poll::Ready(Err(err))
+                }
+            } else {
+                Poll::Ready(Ok(()))
             }
         }
     }
@@ -155,17 +246,14 @@ impl Future for Sleep {
 
 pub struct SleepFd {
     fd: i32,
-    ms:u64,
+    ms: u64,
     b: bool,
 }
 impl SleepFd {
-    pub fn new(ms:u64) -> Self {
+    pub fn new(ms: u64) -> Self {
         Self {
             fd: unsafe {
-                libc::timerfd_create(
-                    libc::CLOCK_MONOTONIC,
-                    libc::TFD_NONBLOCK ,
-                )
+                libc::timerfd_create(libc::CLOCK_MONOTONIC, libc::TFD_NONBLOCK)
             },
             ms,
             b: false,
@@ -183,7 +271,7 @@ impl Future for SleepFd {
             Poll::Ready(())
         } else {
             self.b = true;
-            let mut timer_spec = libc::itimerspec {
+            let timer_spec = libc::itimerspec {
                 it_interval: libc::timespec {
                     tv_sec: 0,
                     tv_nsec: 0,
@@ -193,7 +281,7 @@ impl Future for SleepFd {
                     tv_nsec: 1000_000 * self.ms as i64,
                 }, // 5 秒
             };
-            let result = unsafe {
+            unsafe {
                 libc::timerfd_settime(
                     self.fd,
                     0,
@@ -218,7 +306,7 @@ impl Future for SleepFd {
 mod tests {
     use std::{
         io,
-        net::{TcpStream, ToSocketAddrs},
+        net::ToSocketAddrs,
         os::fd::{AsFd, AsRawFd},
         pin::Pin,
         task::{Context, Poll},
@@ -226,99 +314,42 @@ mod tests {
         time::Duration,
     };
 
-    use socket2::{Domain, Protocol, SockAddr, Socket, Type};
-
     use crate::{
         runtime::{
             executor::{Executor, ExtData},
             reactor::Register,
-            task::{get_id, Task},
+            task::{Task, get_id},
         },
-        tcp::{Sleep, SleepFd},
+        tcp::{Sleep, SleepFd, TcpStream},
         utils::NOW,
     };
 
-    pub struct AsyncTcpStream {
-        inner: TcpStream,
-    }
-
-    impl AsyncTcpStream {
-        pub async fn connect<A: ToSocketAddrs>(addr: A) -> io::Result<Self> {
-            let sock_type = Type::STREAM;
-            let protocol = Protocol::TCP;
-            let socket_addr = addr.to_socket_addrs()?.next().unwrap();
-            let domain = Domain::for_address(socket_addr);
-            let socket = Socket::new(domain, sock_type, Some(protocol))
-                .unwrap_or_else(|_| {
-                    panic!("Failed to create socket at address {}", socket_addr)
-                });
-
-            socket.set_nonblocking(true).unwrap();
-            ConnectTcpStreamFuture {
-                socket: &socket,
-                addr: SockAddr::from(socket_addr),
-            }
-            .await?;
-            let stream = TcpStream::from(socket);
-            // 也许没必要,它可能跟随socket
-            stream.set_nonblocking(true)?;
-            Ok(Self { inner: stream })
-        }
-    }
-
-    pub struct ConnectTcpStreamFuture<'a> {
-        socket: &'a Socket,
-        addr: SockAddr,
-    }
-    impl Future for ConnectTcpStreamFuture<'_> {
-        type Output = Result<(), io::Error>;
-
-        fn poll(
-            self: Pin<&mut Self>,
-            cx: &mut Context<'_>,
-        ) -> Poll<Self::Output> {
-            match self.socket.connect(&self.addr) {
-                Ok(_) => Poll::Ready(Ok(())),
-                Err(e)
-                    if e.raw_os_error() == Some(libc::EINPROGRESS)
-                        || e.kind() == io::ErrorKind::WouldBlock =>
-                {
-                    let waker = cx.waker().clone();
-                    let ext = cx.ext().downcast_mut::<ExtData>().unwrap();
-                    ext.pipe_write.write(&Register {
-                        id: ext.id,
-                        interest_fd: self.socket.as_raw_fd(),
-                        events: libc::EPOLLONESHOT as u32,
-                        waker,
-                    });
-                    Poll::Pending
-                }
-                Err(e) => Poll::Ready(Err(e)),
-            }
-        }
-    }
-
     #[test]
     fn test() {
-        let executor = Executor::new(10);
-        let future = async {
-            println!("start:{}", NOW.elapsed().as_millis());
-            // Sleep::new(Duration::from_millis(1)).await;
-            // for _ in 0..1000 {
-            //     SleepFd::new(1).await;
-            // }
-
-            let stream =
-                AsyncTcpStream::connect("127.0.0.1:3000").await.unwrap();
-            println!("done:{}", NOW.elapsed().as_millis());
-        };
-        let task = Task {
-            id: get_id(),
-            future: Box::pin(future),
-        };
-
-        executor.add_task(&task);
-
-        thread::sleep(Duration::from_millis(100011));
+        let executor = Executor::new(2);
+        for i in 0..10 {
+            let future = async move {
+                let thread = thread::current();
+                // println!("start:{}", NOW.elapsed().as_millis());
+                let mut buf = Vec::<u8>::new();
+                for i in 0..10 {
+                    buf.push(i);
+                }
+                let stream =
+                    TcpStream::connect("127.0.0.1:3000").await.unwrap();
+                stream.write(&buf).await.unwrap();
+                stream.read(&mut buf).await.unwrap();
+                // println!("{:?}", buf);
+                println!(
+                    "{} {}done:{}",
+                    thread.name().unwrap(),
+                    i,
+                    NOW.elapsed().as_millis()
+                );
+            };
+            let task = Task::new(get_id(), Box::new(future));
+            executor.add_task(&task);
+        }
+        executor.block();
     }
 }

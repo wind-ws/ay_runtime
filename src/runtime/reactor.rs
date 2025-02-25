@@ -37,16 +37,16 @@ impl Reactor {
                 pipe_reader.read_all().into_iter().for_each(|reg| {
                     epoll::register(efd, reg.events, reg.interest_fd, reg.id)
                         .unwrap();
-                    println!("isert:{}", reg.id);
+                    // println!("isert:{}", reg.id);
                     map.insert(reg.id, reg);
                 });
                 unsafe { epoll_events.set_len(n) };
                 // 被触发的事件id
                 for event_id in &epoll_events[0..n] {
                     let event_id = event_id.u64;
-                    println!("happen:{}", event_id);
+                    // println!("happen:{}", event_id);
                     if let Some(reg) = map.remove(&event_id) {
-                        println!("remove:{}", event_id);
+                        // println!("remove:{}", event_id);
                         epoll::unregister(
                             efd,
                             reg.events,
