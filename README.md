@@ -45,3 +45,5 @@ Arc::new(TaskWaker {
 Arc::new(Arc::new(pipe::Pipe::<ID>::new()));
 却不会
 
+已确定: 是pipe的问题
+由于pipe write 不会保存所有权,而且只发送指针区域的内容,导致有些堆区的内容被释放,而使用了被释放的堆区
