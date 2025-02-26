@@ -136,10 +136,11 @@ impl Woker {
                 let reg_pipe = reg_pipe;
                 let idle = idle_;
                 // 空闲多少ms,标记为空闲
-                const IDEL_MS: u128 = 500;
+                const IDEL_MS: u128 = 100;
                 let mut time_anchor = 0u128;
                 loop {
-                    let tasks = task_pipe_reader.read_limited(5);
+                    let tasks = task_pipe_reader.read_limited(100);
+                    // println!("{:?}",tasks.len());
                     tasks.into_iter().for_each(|mut task| {
                         let waker =
                             Waker::from(Arc::new(task.waker(id_pipe.clone())));
@@ -164,7 +165,6 @@ impl Woker {
                             }
                             std::task::Poll::Pending => {
                                 println!("p {}",task.id);
-
                                 map.insert(task.id, (task, waker));
                             }
                         }
@@ -185,8 +185,8 @@ impl Woker {
                         let f = Pin::static_mut(a);
 
                         match f.poll(&mut cx) {
-                            std::task::Poll::Ready(v) => {
-                                println!("r {}|",id);
+                            std::task::Poll::Ready(_v) => {
+                                // println!("r {}|",id);
                                 // 释放future
                                 unsafe {
                                     drop(Box::from_raw(task.future.as_ptr()))
@@ -194,7 +194,7 @@ impl Woker {
                                 map.remove(&id);
                             }
                             std::task::Poll::Pending => {
-                                println!("p {}|",id);
+                                // println!("p {}|",id);
                             }
                         }
                     }

@@ -13,14 +13,18 @@ pub(crate) fn pipe2() -> (RawFd, RawFd) {
     unsafe {
         libc::pipe2(fds.as_mut_ptr(), libc::O_NONBLOCK);
     }
-    let current_size = unsafe { libc::fcntl(fds[1], libc::F_GETPIPE_SZ) };
-    let new_size = 128 * 1024; // 128KB
-    if unsafe { libc::fcntl(fds[1], libc::F_SETPIPE_SZ, new_size) } == -1 {
-        panic!("")
-    }
+    // let current_size = unsafe { libc::fcntl(fds[1], libc::F_GETPIPE_SZ) };
+    // let new_size = 1024 * 1024; // 128KB 原 64KB
+    // if unsafe { libc::fcntl(fds[1], libc::F_SETPIPE_SZ, new_size) } == -1 {
+    //     panic!("")
+    // }
+    // if unsafe { libc::fcntl(fds[0], libc::F_SETPIPE_SZ, new_size) } == -1 {
+    //     panic!("")
+    // }
+
     (fds[0], fds[1])
 }
-
+//dup / dup2: 复制 pipe 的读端或写端。
 pub(crate) struct Pipe<T> {
     read_fd: RawFd,
     write_fd: RawFd,

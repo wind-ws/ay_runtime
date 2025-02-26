@@ -30,8 +30,8 @@ impl TcpStream {
     pub async fn connect<A: ToSocketAddrs>(addr: A) -> io::Result<Self> {
         let ty = Type::STREAM;
         let protocol = Protocol::TCP;
-        let socket_addr = addr.to_socket_addrs()?.next().unwrap();
-        let domain = Domain::for_address(socket_addr);
+        // let socket_addr = addr.to_socket_addrs()?.next().unwrap();
+        let domain = Domain::IPV4;// Domain::for_address(socket_addr);
 
         let sfd = unsafe { libc::socket(domain.0, ty.0, protocol.0) };
         if sfd < 0 {
@@ -41,14 +41,14 @@ impl TcpStream {
         let new_flags = flags | libc::O_NONBLOCK;
         unsafe { libc::fcntl(sfd, libc::F_SETFL, new_flags) };
 
-        match socket_addr {
-            SocketAddr::V4(socket_addr_v4) => {
+        // match socket_addr {
+        //     SocketAddr::V4(socket_addr_v4) => {
                 let sockaddr = libc::sockaddr_in {
                     sin_family: libc::AF_INET as u16,
-                    sin_port: socket_addr_v4.port().to_be(),
+                    sin_port: 3000u16.to_be(),//socket_addr_v4.port().to_be(),
                     sin_addr: libc::in_addr {
                         s_addr: u32::from_be_bytes(
-                            socket_addr_v4.ip().octets(),
+                            [127, 0, 0, 1]//socket_addr_v4.ip().octets(),
                         )
                         .to_be(),
                     },
@@ -60,9 +60,9 @@ impl TcpStream {
                     len: std::mem::size_of::<libc::sockaddr_in>() as u32,
                 }
                 .await?;
-            }
-            SocketAddr::V6(socket_addr_v6) => todo!(),
-        };
+        //     }
+        //     SocketAddr::V6(socket_addr_v6) => todo!(),
+        // };
         Ok(Self {
             socket_fd: sfd,
             // addr: sockaddr,
@@ -326,20 +326,20 @@ mod tests {
 
     #[test]
     fn test() {
-        let executor = Executor::new(2);
-        for i in 0..10 {
+        let executor = Executor::new(10);
+        for i in 0..100 {
             let future = async move {
                 let thread = thread::current();
                 // println!("start:{}", NOW.elapsed().as_millis());
-                let mut buf = Vec::<u8>::new();
-                for i in 0..10 {
-                    buf.push(i);
-                }
+                // let mut buf = Vec::<u8>::new();
+                // for i in 0..10 {
+                //     buf.push(i);
+                // }
                 let stream =
                     TcpStream::connect("127.0.0.1:3000").await.unwrap();
-                stream.write(&buf).await.unwrap();
-                stream.read(&mut buf).await.unwrap();
-                // println!("{:?}", buf);
+                // stream.write(&buf).await.unwrap();
+                // stream.read(&mut buf).await.unwrap();
+                // // println!("{:?}", buf);
                 println!(
                     "{} {}done:{}",
                     thread.name().unwrap(),
