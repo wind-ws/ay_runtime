@@ -14,7 +14,7 @@ pub(crate) fn pipe2() -> (RawFd, RawFd) {
         libc::pipe2(fds.as_mut_ptr(), libc::O_NONBLOCK);
     }
     // let current_size = unsafe { libc::fcntl(fds[1], libc::F_GETPIPE_SZ) };
-    // let new_size = 1024 * 1024; // 128KB 原 64KB
+    // let new_size = 1024 * 1024; // 原 64KB
     // if unsafe { libc::fcntl(fds[1], libc::F_SETPIPE_SZ, new_size) } == -1 {
     //     panic!("")
     // }
@@ -113,6 +113,8 @@ impl<T> Drop for Pipe<T> {
 
 #[cfg(test)]
 mod tests {
+    use std::{sync::Arc, thread, time::Duration};
+
     use super::Pipe;
     #[derive(Debug)]
     struct A {
@@ -121,16 +123,27 @@ mod tests {
     }
     #[test]
     fn test() {
-        let pipe = Pipe::<A>::new();
-        pipe.write(&A { u: 1, b: false });
-        pipe.write(&A { u: 2, b: false });
-        pipe.write(&A { u: 3, b: false });
-        pipe.write(&A { u: 4, b: false });
-        pipe.write(&A { u: 5, b: false });
-        pipe.write(&A { u: 6, b: false });
-        println!("{:?}", pipe.read_limited(5));
+        let pipe = Arc::new(Pipe::<A>::new());
+        for n in 0..10 {
+            let pipe_ = pipe.clone();
+            thread::spawn(move || {
+                for i in 0..100 {
+                    pipe_.write(&A { u: i, b: false });
+                }
+            });
+        }
+        for n in 0..10 {
+            let pipe_ = pipe.clone();
 
-        println!("{:?}", pipe.read_all());
+            thread::spawn(move || {
+                for i in 0..100 {
+                    println!("{:?}", pipe_.read_limited(5));
+                }
+            });
+        }
+        
+
+        thread::sleep(Duration::from_millis(1000));
     }
     #[test]
     fn test_mutil() {}

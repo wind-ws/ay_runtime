@@ -51,3 +51,13 @@ Arc::new(Arc::new(pipe::Pipe::<ID>::new()));
 ## 当task数量多起来后,就会发生崩溃
 十有八九是 pipe的问题
 被骗了,谁说pipe可以多线程多消费多生产的...
+
+pipe没有出现 重复读取重复写入的问题
+可能是和pipe相关,
+
+bug 展现出随机性,每次运行结果都可能不同,有以下几种:
+1. malloc(): unaligned tcache chunk detected (signal: 11, SIGSEGV: invalid memory reference)
+2. malloc_consolidate(): unaligned fastbin chunk detected (signal: 6, SIGABRT: process abort signal)
+3. malloc(): unaligned tcache chunk detected (signal: 6, SIGABRT: process abort signal)
+4. corrupted double-linked list
+5. 运行成功

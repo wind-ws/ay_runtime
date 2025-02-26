@@ -1,19 +1,19 @@
 use std::{
-    alloc::{Layout, dealloc},
+    alloc::{dealloc, Layout},
     collections::HashMap,
     io::Write,
     os::fd::RawFd,
-    pin::{Pin, pin},
+    pin::{pin, Pin},
     ptr,
     sync::{
-        Arc,
-        atomic::{AtomicBool, AtomicU64, AtomicUsize},
+        atomic::{AtomicBool, AtomicU64, AtomicUsize}, Arc, Mutex
     },
     task::{Context, ContextBuilder, Waker},
     thread,
 };
 
 use lazy_static::lazy_static;
+use libc::abort;
 
 use super::{
     reactor::{Reactor, Register},
@@ -117,6 +117,9 @@ pub struct Woker {
     /// true: 空闲
     pub idle: Arc<AtomicBool>,
 }
+
+
+
 impl Woker {
     pub fn new(
         id: ID,
@@ -139,9 +142,9 @@ impl Woker {
                 const IDEL_MS: u128 = 100;
                 let mut time_anchor = 0u128;
                 loop {
-                    let tasks = task_pipe_reader.read_limited(100);
+                    let tasks = task_pipe_reader.read_all();
                     // println!("{:?}",tasks.len());
-                    tasks.into_iter().for_each(|mut task| {
+                    for mut task in tasks  {
                         let waker =
                             Waker::from(Arc::new(task.waker(id_pipe.clone())));
                         let mut ed = ExtData {
@@ -153,7 +156,7 @@ impl Woker {
                             .build();
                         let a = unsafe { task.future.as_mut() };
                         let f = Pin::static_mut(a);
-                        // println!(" {}",task.id);
+                        // // println!(" {}",task.id);
                         match f.poll(&mut cx) {
                             std::task::Poll::Ready(v) => {
                                 println!("r {}",task.id);
@@ -168,7 +171,8 @@ impl Woker {
                                 map.insert(task.id, (task, waker));
                             }
                         }
-                    });
+                    }
+                    
                     let ids = id_pipe.read_all();
                     for id in ids.into_iter() {
                         let (task, waker) = map.get_mut(&id).unwrap();

@@ -335,11 +335,13 @@ mod tests {
                 // for i in 0..10 {
                 //     buf.push(i);
                 // }
-                let stream =
-                    TcpStream::connect("127.0.0.1:3000").await.unwrap();
+                // let stream =
+                //     TcpStream::connect("127.0.0.1:3000").await.unwrap();
                 // stream.write(&buf).await.unwrap();
                 // stream.read(&mut buf).await.unwrap();
                 // // println!("{:?}", buf);
+                SleepFd::new(1).await;
+                // Sleep::new(Duration::from_millis(1)).await;
                 println!(
                     "{} {}done:{}",
                     thread.name().unwrap(),
