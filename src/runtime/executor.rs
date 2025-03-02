@@ -1,12 +1,13 @@
 use std::{
-    alloc::{dealloc, Layout},
+    alloc::{Layout, dealloc},
     collections::HashMap,
     io::Write,
     os::fd::RawFd,
-    pin::{pin, Pin},
+    pin::{Pin, pin},
     ptr,
     sync::{
-        atomic::{AtomicBool, AtomicU64, AtomicUsize}, Arc, Mutex
+        Arc, Mutex,
+        atomic::{AtomicBool, AtomicU64, AtomicUsize},
     },
     task::{Context, ContextBuilder, Waker},
     thread,
@@ -27,7 +28,7 @@ use crate::utils::{
 
 static mut TASK_PIPE: Option<Arc<Pipe<Task>>> = None;
 /// 总任务添加数量
-static TASK_COUNT: AtomicU64 = AtomicU64::new(0);
+pub static TASK_COUNT: AtomicU64 = AtomicU64::new(0);
 
 pub struct Executor {
     thread_pool: ThreadPool,
@@ -118,8 +119,6 @@ pub struct Woker {
     pub idle: Arc<AtomicBool>,
 }
 
-
-
 impl Woker {
     pub fn new(
         id: ID,
@@ -144,7 +143,7 @@ impl Woker {
                 loop {
                     let tasks = task_pipe_reader.read_all();
                     // println!("{:?}",tasks.len());
-                    for mut task in tasks  {
+                    for mut task in tasks {
                         let waker =
                             Waker::from(Arc::new(task.waker(id_pipe.clone())));
                         let mut ed = ExtData {
@@ -159,20 +158,21 @@ impl Woker {
                         // // println!(" {}",task.id);
                         match f.poll(&mut cx) {
                             std::task::Poll::Ready(v) => {
-                                println!("r {}",task.id);
-                                
+                                println!("r {}", task.id);
+
                                 // 释放 future
                                 unsafe {
                                     drop(Box::from_raw(task.future.as_ptr()))
                                 }
                             }
                             std::task::Poll::Pending => {
-                                println!("p {}",task.id);
+                                println!("p {}", task.id);
                                 map.insert(task.id, (task, waker));
                             }
                         }
                     }
                     
+
                     let ids = id_pipe.read_all();
                     for id in ids.into_iter() {
                         let (task, waker) = map.get_mut(&id).unwrap();

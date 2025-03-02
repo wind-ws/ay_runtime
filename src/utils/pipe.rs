@@ -15,13 +15,13 @@ pub(crate) fn pipe2() -> (RawFd, RawFd) {
         libc::pipe2(fds.as_mut_ptr(), libc::O_NONBLOCK );
     }
     // let current_size = unsafe { libc::fcntl(fds[1], libc::F_GETPIPE_SZ) };
-    // let new_size = 1024 * 1024; // 原 64KB
-    // if unsafe { libc::fcntl(fds[1], libc::F_SETPIPE_SZ, new_size) } == -1 {
-    //     panic!("")
-    // }
-    // if unsafe { libc::fcntl(fds[0], libc::F_SETPIPE_SZ, new_size) } == -1 {
-    //     panic!("")
-    // }
+    let new_size = 256 * 1024; // 原 64KB
+    if unsafe { libc::fcntl(fds[1], libc::F_SETPIPE_SZ, new_size) } == -1 {
+        panic!("")
+    }
+    if unsafe { libc::fcntl(fds[0], libc::F_SETPIPE_SZ, new_size) } == -1 {
+        panic!("")
+    }
 
     (fds[0], fds[1])
 }

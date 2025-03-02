@@ -34,14 +34,15 @@ impl Reactor {
                 let n = epoll::wait(efd, &mut epoll_events, 1024, 0).unwrap();
                 let n = n as usize;
                 // 接受事件,并注册到epoll
-                pipe_reader.read_all().into_iter().for_each(|reg| {
+                for reg in pipe_reader.read_all() {
                     epoll::register(efd, reg.events, reg.interest_fd, reg.id)
                         .unwrap();
                     println!("isert:{}", reg.id);
                     map.insert(reg.id, reg);
-                });
+                }
+
                 unsafe { epoll_events.set_len(n) };
-                // 被触发的事件id
+                //  
                 for event_id in &epoll_events[0..n] {
                     let event_id = event_id.u64;
                     // println!("happen:{}", event_id);

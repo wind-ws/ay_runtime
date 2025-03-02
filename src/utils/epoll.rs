@@ -6,7 +6,7 @@
 //! fd: 文件描述符 是一个用于标识和访问文件或输入/输出资源（如文件、网络套接字、管道等）的一种整数值。它是操作系统用来管理和追踪进程中打开的文件或其他 I/O 资源的方式
 //!
 //! libc::EINPROGRESS: 当你在非阻塞模式下执行 I/O 操作（如连接、读取或写入）时，如果操作无法立即完成，它将返回 EINPROGRESS
-use std::{io, os::fd::RawFd};
+use std::{io::{self, Error, ErrorKind}, os::fd::RawFd};
 
 pub(crate) type EpollEvent = libc::epoll_event;
 pub(crate) type EpollParams = libc::epoll_params;
@@ -130,6 +130,12 @@ pub fn unregister(
     let mut event = EpollEvent { events, u64: id };
     match ctl(fd, libc::EPOLL_CTL_DEL, interest_fd, &mut event) {
         Ok(_) => Ok(()),
-        Err(e) => Err(e),
+        Err(e) => {
+            if e.kind() == ErrorKind::NotFound {
+                Ok(())
+            }else {
+                Err(e)
+            }
+        },
     }
 }

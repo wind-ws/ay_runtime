@@ -189,7 +189,7 @@ impl Future for WriteTcpStreamFuture<'_> {
                     ext.pipe_write.write(&Register {
                         id: ext.id,
                         interest_fd: self.socket,
-                        events: (libc::EPOLLIN) as u32,
+                        events: (libc::EPOLLOUT) as u32,
                         waker,
                     });
                     Poll::Pending
@@ -326,8 +326,8 @@ mod tests {
 
     #[test]
     fn test() {
-        let executor = Executor::new(1);
-        for i in 0..1 {
+        let executor = Executor::new(10);
+        for i in 0..100 {
             let future = async move {
                 let thread = thread::current();
                 // println!("start:{}", NOW.elapsed().as_millis());
