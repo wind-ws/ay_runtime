@@ -61,3 +61,6 @@ bug 展现出随机性,每次运行结果都可能不同,有以下几种:
 3. malloc(): unaligned tcache chunk detected (signal: 6, SIGABRT: process abort signal)
 4. corrupted double-linked list
 5. 运行成功
+
+好吧,pipe只是支持 多生产单消费 (咋网上说的都不同...)
+原子写入 不能超过 1024 * 4 字节

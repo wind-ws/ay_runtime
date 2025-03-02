@@ -1,10 +1,4 @@
-use std::{
-    ffi::c_void,
-    marker::PhantomData,
-    mem::MaybeUninit,
-    os::fd::{self, RawFd},
-    sync::{Mutex, RwLock},
-};
+use std::{ffi::c_void, marker::PhantomData, mem::MaybeUninit, os::fd::RawFd};
 
 /// 创建非堵塞pipe
 ///
@@ -12,7 +6,7 @@ use std::{
 pub(crate) fn pipe2() -> (RawFd, RawFd) {
     let mut fds: [RawFd; 2] = [0; 2];
     unsafe {
-        libc::pipe2(fds.as_mut_ptr(), libc::O_NONBLOCK );
+        libc::pipe2(fds.as_mut_ptr(), libc::O_NONBLOCK);
     }
     // let current_size = unsafe { libc::fcntl(fds[1], libc::F_GETPIPE_SZ) };
     let new_size = 256 * 1024; // 原 64KB
@@ -114,41 +108,4 @@ impl<T> Drop for Pipe<T> {
             libc::close(self.write_fd);
         };
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::{sync::Arc, thread, time::Duration};
-
-    use super::Pipe;
-    #[derive(Debug)]
-    struct A {
-        u: u32,
-        b: bool,
-    }
-    #[test]
-    fn test() {
-        let pipe = Arc::new(Pipe::<A>::new());
-        for n in 0..10 {
-            let pipe_ = pipe.clone();
-            thread::spawn(move || {
-                for i in 0..100 {
-                    pipe_.write(&A { u: i, b: false });
-                }
-            });
-        }
-        for n in 0..10 {
-            let pipe_ = pipe.clone();
-
-            thread::spawn(move || {
-                for i in 0..100 {
-                    // println!("{:?}", pipe_.read_limited(5));
-                }
-            });
-        }
-
-        thread::sleep(Duration::from_millis(1000));
-    }
-    #[test]
-    fn test_mutil() {}
 }

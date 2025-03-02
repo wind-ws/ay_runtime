@@ -68,7 +68,6 @@ pub fn ay_main(attrs: RawTokenStream, item: RawTokenStream) -> RawTokenStream {
         fn #func_name() {
             let mut executor = ay_runtime::runtime::executor::Executor::new(#worker_threads);
             let future = async { #block };
-            let future = std::boxed::Box::pin(future);
             let task = ay_runtime::runtime::task::Task::new(ay_runtime::runtime::task::get_id(), std::boxed::Box::new(future));
             executor.add_task(&task);
             executor.block();
@@ -117,14 +116,10 @@ pub fn ay_test(attrs: RawTokenStream, item: RawTokenStream) -> RawTokenStream {
          // 使用 Tokio 的运行时标记
         #[test]
         fn #func_name() {
-            let mut executor = interview_rust_project::runtime::executor::Executor::new(#worker_threads, 500);
+            let mut executor = ay_runtime::runtime::executor::Executor::new(#worker_threads);
             let future = async { #block };
-            let future = std::boxed::Box::pin(future);
-            let task = interview_rust_project::runtime::task::Task {
-                id: interview_rust_project::runtime::reactor::IdManager::INVALID_ID,
-                future: future,
-            };
-            executor.add_task(task);
+            let task = ay_runtime::runtime::task::Task::new(ay_runtime::runtime::task::get_id(), std::boxed::Box::new(future));
+            executor.add_task(&task);
             executor.block();
         }
     };

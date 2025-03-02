@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, ops::Deref, os::fd::RawFd};
+use std::net::SocketAddr;
 
 // struct Socket {
 //     socket_fd: RawFd,
@@ -17,7 +17,7 @@ impl Domain {
     pub const IPV6: Domain = Domain(libc::AF_INET6);
 
     pub const UNIX: Domain = Domain(libc::AF_UNIX);
-    
+
     pub const fn for_address(address: SocketAddr) -> Domain {
         match address {
             SocketAddr::V4(_) => Domain::IPV4,
@@ -30,21 +30,14 @@ impl Domain {
 pub struct Type(pub libc::c_int);
 
 impl Type {
-
     pub const STREAM: Type = Type(libc::SOCK_STREAM);
 
     pub const DGRAM: Type = Type(libc::SOCK_DGRAM);
-
-
 }
-
 
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub struct Protocol(pub libc::c_int);
 
 impl Protocol {
-
     pub const TCP: Protocol = Protocol(libc::IPPROTO_TCP);
-
-
 }

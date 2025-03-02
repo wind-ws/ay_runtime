@@ -6,7 +6,10 @@
 //! fd: 文件描述符 是一个用于标识和访问文件或输入/输出资源（如文件、网络套接字、管道等）的一种整数值。它是操作系统用来管理和追踪进程中打开的文件或其他 I/O 资源的方式
 //!
 //! libc::EINPROGRESS: 当你在非阻塞模式下执行 I/O 操作（如连接、读取或写入）时，如果操作无法立即完成，它将返回 EINPROGRESS
-use std::{io::{self, Error, ErrorKind}, os::fd::RawFd};
+use std::{
+    io::{self, ErrorKind},
+    os::fd::RawFd,
+};
 
 pub(crate) type EpollEvent = libc::epoll_event;
 pub(crate) type EpollParams = libc::epoll_params;
@@ -23,10 +26,10 @@ pub(crate) fn create() -> io::Result<i32> {
 }
 
 /// 创建一个epoll实例，获取其文件描述符
-/// `flags` : 
+/// `flags` :
 ///     0 : 和create一样
-///     EPOLL_CLOEXEC : 
-fn create1(flags:i32) {
+///     EPOLL_CLOEXEC :
+fn create1(flags: i32) {
     // libc::epoll_create1(flags)
 }
 
@@ -85,11 +88,11 @@ pub(crate) fn wait(
     }
 }
 
-pub(crate) fn pwait(){
+pub(crate) fn pwait() {
     // libc::epoll_pwait(epfd, events, maxevents, timeout, sigmask)
 }
 
-pub(crate) fn pwait2(){
+pub(crate) fn pwait2() {
     // libc::epoll_pwait2(epfd, events, maxevents, timeout, sigmask)
 }
 
@@ -103,7 +106,6 @@ pub(crate) fn close(fd: i32) -> io::Result<()> {
         Ok(())
     }
 }
-
 
 pub fn register(
     fd: RawFd,
@@ -133,9 +135,9 @@ pub fn unregister(
         Err(e) => {
             if e.kind() == ErrorKind::NotFound {
                 Ok(())
-            }else {
+            } else {
                 Err(e)
             }
-        },
+        }
     }
 }
