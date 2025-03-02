@@ -3,6 +3,7 @@ use std::thread;
 use ay_runtime::{runtime::executor::Executor, tcp::TcpStream, utils::NOW};
 use proc_macro::ay_main;
 
+// 1000 个future ,平均52ms
 #[ay_main(worker_threads = 10)]
 async fn main() {
     for i in 0..1000 {
