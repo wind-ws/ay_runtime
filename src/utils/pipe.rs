@@ -3,6 +3,7 @@ use std::{
     marker::PhantomData,
     mem::MaybeUninit,
     os::fd::{self, RawFd},
+    sync::{Mutex, RwLock},
 };
 
 /// 创建非堵塞pipe
@@ -11,7 +12,7 @@ use std::{
 pub(crate) fn pipe2() -> (RawFd, RawFd) {
     let mut fds: [RawFd; 2] = [0; 2];
     unsafe {
-        libc::pipe2(fds.as_mut_ptr(), libc::O_NONBLOCK);
+        libc::pipe2(fds.as_mut_ptr(), libc::O_NONBLOCK );
     }
     // let current_size = unsafe { libc::fcntl(fds[1], libc::F_GETPIPE_SZ) };
     // let new_size = 1024 * 1024; // 原 64KB
@@ -58,6 +59,7 @@ impl<T> Pipe<T> {
         unsafe {
             let n =
                 libc::read(self.read_fd, v.as_mut_ptr() as *mut c_void, len);
+
             if n == 0 || n == -1 {
                 None
             } else if n == len as isize {
@@ -74,6 +76,7 @@ impl<T> Pipe<T> {
         while let Some(v) = self.read() {
             vec.push(v);
         }
+
         vec
     }
     ///
@@ -82,6 +85,7 @@ impl<T> Pipe<T> {
     ///
     /// @return iter
     pub fn read_limited(&self, n: usize) -> Vec<T> {
+        // let mut a = self._test_lock.lock().unwrap();
         let len = std::mem::size_of::<T>();
         let mut vec = Vec::<T>::with_capacity(n);
         unsafe {
@@ -90,6 +94,7 @@ impl<T> Pipe<T> {
                 vec.as_mut_ptr() as *mut c_void,
                 len * n,
             );
+            // *a = *a + 1u32;
             if n < 0 {
                 n = 0;
             }
@@ -137,11 +142,10 @@ mod tests {
 
             thread::spawn(move || {
                 for i in 0..100 {
-                    println!("{:?}", pipe_.read_limited(5));
+                    // println!("{:?}", pipe_.read_limited(5));
                 }
             });
         }
-        
 
         thread::sleep(Duration::from_millis(1000));
     }

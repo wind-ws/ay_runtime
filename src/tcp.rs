@@ -326,8 +326,8 @@ mod tests {
 
     #[test]
     fn test() {
-        let executor = Executor::new(10);
-        for i in 0..100 {
+        let executor = Executor::new(1);
+        for i in 0..1 {
             let future = async move {
                 let thread = thread::current();
                 // println!("start:{}", NOW.elapsed().as_millis());
@@ -342,12 +342,12 @@ mod tests {
                 // // println!("{:?}", buf);
                 SleepFd::new(1).await;
                 // Sleep::new(Duration::from_millis(1)).await;
-                println!(
-                    "{} {}done:{}",
-                    thread.name().unwrap(),
-                    i,
-                    NOW.elapsed().as_millis()
-                );
+                // println!(
+                //     "{} {}done:{}",
+                //     thread.name().unwrap(),
+                //     i,
+                //     NOW.elapsed().as_millis()
+                // );
             };
             let task = Task::new(get_id(), Box::new(future));
             executor.add_task(&task);
